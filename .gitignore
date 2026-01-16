@@ -20,5 +20,5 @@ conversations/
 # Chrome debug profile
 /tmp/chrome-debug/
 
-# Claude settings
-.claude/
+# Claude personal settings (keep project config visible)
+.claude/settings.local.json
