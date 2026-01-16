@@ -264,6 +264,7 @@ class DebateController:
         self.chatgpt: Optional[ChatGPT] = None
         self.gemini: Optional[Gemini] = None
         self.round = 0
+        self.total_rounds = 0
         self.paused = False
         self.history = []  # Track conversation for context monitoring
 
@@ -304,6 +305,10 @@ class DebateController:
                      custom_instruction: str = None) -> str:
         """Build a prompt with header, role, and content."""
         parts = []
+
+        # Round info
+        if self.total_rounds > 0:
+            parts.append(f"[Round {self.round} of {self.total_rounds}]")
 
         # Header
         if target == "chatgpt":
@@ -483,6 +488,8 @@ async def interactive_mode(controller: DebateController):
             if not args:
                 print("Usage: start <topic>")
                 continue
+            # Set total_rounds to 1 for the initial round
+            controller.total_rounds = controller.round + 1
             # Build initial prompts with topic
             chatgpt_prompt = controller.build_prompt("chatgpt", custom_instruction=f"Topic: {args}\n\nMake your opening argument.")
             gemini_prompt = None  # Will be built from ChatGPT's response
@@ -490,6 +497,8 @@ async def interactive_mode(controller: DebateController):
 
         elif command == "round":
             n = int(args) if args.isdigit() else 1
+            # Set total_rounds to current + n
+            controller.total_rounds = controller.round + n
             for _ in range(n):
                 last_response = await controller.run_round(last_response=last_response)
                 if controller.config.max_rounds and controller.round >= controller.config.max_rounds:

@@ -28,6 +28,7 @@ debate_state = {
     "running": False,
     "paused": False,
     "round": 0,
+    "total_rounds": 0,
     "history": [],
     "config": {
         # System prompt prepended to ALL messages (fully customizable)
@@ -218,10 +219,14 @@ class ChromeController:
         ''')
 
 
-def build_prompt(target, opponent_response=None, custom=None):
+def build_prompt(target, opponent_response=None, custom=None, current_round=None, total_rounds=None):
     """Build prompt with config."""
     config = debate_state["config"]
     parts = []
+
+    # Round info
+    if current_round and total_rounds:
+        parts.append(f"[Round {current_round} of {total_rounds}]")
 
     # System prompt (use Gemini-specific if available for Gemini)
     if target == "gemini" and config["system_prompt_gemini"]:
@@ -277,9 +282,10 @@ def run_debate_round(chrome, initial_prompt=None, last_response=None):
     with state_lock:
         debate_state["round"] += 1
         current_round = debate_state["round"]
+        total_rounds = debate_state["total_rounds"]
 
     # ChatGPT turn
-    prompt = initial_prompt or build_prompt("chatgpt", last_response)
+    prompt = initial_prompt or build_prompt("chatgpt", last_response, current_round=current_round, total_rounds=total_rounds)
     chrome.send_to_chatgpt(prompt)
 
     with state_lock:
@@ -306,7 +312,7 @@ def run_debate_round(chrome, initial_prompt=None, last_response=None):
     time.sleep(debate_state["config"]["delay"])
 
     # Gemini turn
-    prompt = build_prompt("gemini", chatgpt_response)
+    prompt = build_prompt("gemini", chatgpt_response, current_round=current_round, total_rounds=total_rounds)
     chrome.send_to_gemini(prompt)
 
     with state_lock:
@@ -331,6 +337,9 @@ def run_debate_round(chrome, initial_prompt=None, last_response=None):
 
 
 def debate_loop(topic, num_rounds):
+    with state_lock:
+        debate_state["total_rounds"] = num_rounds
+
     chrome = ChromeController()
     success, msg = chrome.connect()
 
@@ -372,7 +381,7 @@ def debate_loop(topic, num_rounds):
 
             time.sleep(debate_state["config"]["delay"])
 
-        initial = build_prompt("chatgpt", custom=f"Topic: {topic}\n\nMake your opening argument.")
+        initial = build_prompt("chatgpt", custom=f"Topic: {topic}\n\nMake your opening argument.", current_round=1, total_rounds=num_rounds)
         last_response = run_debate_round(chrome, initial_prompt=initial)
 
         for _ in range(num_rounds - 1):
@@ -489,6 +498,8 @@ def resume_debate():
 
         debate_state["running"] = True
         debate_state["paused"] = False
+        # Set total rounds to current + new rounds being added
+        debate_state["total_rounds"] = debate_state["round"] + num_rounds
 
         last_resp = None
         for item in reversed(debate_state["history"]):
