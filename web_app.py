@@ -31,21 +31,17 @@ debate_state = {
     "total_rounds": 0,
     "history": [],
     "config": {
-        # System prompt prepended to ALL messages (fully customizable)
-        "system_prompt": "",
-        # Separate system prompt for Gemini (if empty, uses main system_prompt)
-        "system_prompt_gemini": "",
-        # One-time context sent to both AIs at the start
-        "initial_context": "",
-        # Whether to include "You are debating X" header
-        "include_opponent_header": True,
-        # Role/position for each AI
-        "role_chatgpt": "",
-        "role_gemini": "",
-        # Instructions appended to prompts
-        "instructions": "Respond in 2-3 concise paragraphs. Use LaTeX notation for any mathematical expressions (e.g., $x^2$ for inline, $$\\int f(x)dx$$ for display).",
-        # Goal/convergence instruction
-        "goal": "",
+        # Initial prompts (Round 1 only)
+        "initial_prompt_chatgpt": "",
+        "initial_prompt_gemini": "",
+        # Subsequent prompts (Round 2+)
+        "subsequent_prompt_chatgpt": "",
+        "subsequent_prompt_gemini": "",
+        # Formatting instructions (appended to ALL prompts)
+        "formatting_chatgpt": "",
+        "formatting_gemini": "",
+        # Whether to include ChatGPT's response in Gemini's first prompt
+        "include_chatgpt_response_in_first": True,
         # Delay between messages
         "delay": 3
     }
@@ -120,46 +116,124 @@ class ChromeController:
         """Bring tab to front so interactions work reliably."""
         self._send_cdp(ws, "Page.bringToFront", {})
 
-    def send_to_chatgpt(self, message):
+    def send_to_chatgpt(self, message, max_retries=3):
+        """Send message to ChatGPT with confirmation that it was received."""
         self._activate_tab(self.chatgpt_ws)
-        self._evaluate(self.chatgpt_ws, '''
-            (() => {
-                const el = document.querySelector("#prompt-textarea") || document.querySelector("textarea");
-                if (el) { el.focus(); el.value = ""; }
-            })()
-        ''')
-        time.sleep(0.2)
-        self._type_text(self.chatgpt_ws, message)
-        time.sleep(0.3)
-        self._evaluate(self.chatgpt_ws, '''
-            (() => {
-                const btn = document.querySelector('[data-testid="send-button"]') ||
-                           document.querySelector('button[aria-label*="Send"]');
-                if (btn && !btn.disabled) btn.click();
-            })()
-        ''')
+        initial_count = self.get_chatgpt_response_count()
 
-    def send_to_gemini(self, message):
+        for attempt in range(max_retries):
+            # Focus and clear input
+            self._evaluate(self.chatgpt_ws, '''
+                (() => {
+                    const el = document.querySelector("#prompt-textarea") || document.querySelector("textarea");
+                    if (el) { el.focus(); el.value = ""; }
+                })()
+            ''')
+            time.sleep(0.3)
+
+            # Type message
+            self._type_text(self.chatgpt_ws, message)
+            time.sleep(0.5)
+
+            # Click send button
+            clicked = self._evaluate(self.chatgpt_ws, '''
+                (() => {
+                    const btn = document.querySelector('[data-testid="send-button"]') ||
+                               document.querySelector('button[aria-label*="Send"]');
+                    if (btn && !btn.disabled) { btn.click(); return true; }
+                    return false;
+                })()
+            ''')
+
+            if not clicked:
+                print(f"  [ChatGPT] Send button not clicked, attempt {attempt + 1}/{max_retries}")
+                time.sleep(1)
+                continue
+
+            # Wait for confirmation: either generating starts or response count increases
+            confirmed = self._wait_for_send_confirmation(
+                is_generating_fn=self.is_chatgpt_generating,
+                get_count_fn=self.get_chatgpt_response_count,
+                initial_count=initial_count,
+                timeout=10
+            )
+
+            if confirmed:
+                return True
+
+            print(f"  [ChatGPT] Message not confirmed, attempt {attempt + 1}/{max_retries}")
+            time.sleep(1)
+
+        print("  [ChatGPT] WARNING: Failed to confirm message was sent after retries")
+        return False
+
+    def _wait_for_send_confirmation(self, is_generating_fn, get_count_fn, initial_count, timeout=10):
+        """Wait for confirmation that a message was sent (generation started or new response appeared)."""
+        start = time.time()
+        while time.time() - start < timeout:
+            # Check if generation has started
+            if is_generating_fn():
+                return True
+            # Check if a new response has already appeared (fast response)
+            if get_count_fn() > initial_count:
+                return True
+            time.sleep(0.5)
+        return False
+
+    def send_to_gemini(self, message, max_retries=3):
+        """Send message to Gemini with confirmation that it was received."""
         self._activate_tab(self.gemini_ws)
-        self._evaluate(self.gemini_ws, '''
-            (() => {
-                const el = document.querySelector(".ql-editor");
-                if (el) { el.click(); el.focus(); }
-            })()
-        ''')
-        time.sleep(0.2)
-        self._type_text(self.gemini_ws, message)
-        time.sleep(0.3)
-        self._evaluate(self.gemini_ws, '''
-            (() => {
-                const buttons = Array.from(document.querySelectorAll("button"));
-                for (const btn of buttons) {
-                    if ((btn.getAttribute("aria-label") || "").toLowerCase().includes("send")) {
-                        btn.click(); break;
+        initial_count = self.get_gemini_response_count()
+
+        for attempt in range(max_retries):
+            # Focus input
+            self._evaluate(self.gemini_ws, '''
+                (() => {
+                    const el = document.querySelector(".ql-editor");
+                    if (el) { el.click(); el.focus(); el.innerHTML = ""; }
+                })()
+            ''')
+            time.sleep(0.3)
+
+            # Type message
+            self._type_text(self.gemini_ws, message)
+            time.sleep(0.5)
+
+            # Click send button
+            clicked = self._evaluate(self.gemini_ws, '''
+                (() => {
+                    const buttons = Array.from(document.querySelectorAll("button"));
+                    for (const btn of buttons) {
+                        if ((btn.getAttribute("aria-label") || "").toLowerCase().includes("send")) {
+                            btn.click();
+                            return true;
+                        }
                     }
-                }
-            })()
-        ''')
+                    return false;
+                })()
+            ''')
+
+            if not clicked:
+                print(f"  [Gemini] Send button not clicked, attempt {attempt + 1}/{max_retries}")
+                time.sleep(1)
+                continue
+
+            # Wait for confirmation: either generating starts or response count increases
+            confirmed = self._wait_for_send_confirmation(
+                is_generating_fn=self.is_gemini_generating,
+                get_count_fn=self.get_gemini_response_count,
+                initial_count=initial_count,
+                timeout=10
+            )
+
+            if confirmed:
+                return True
+
+            print(f"  [Gemini] Message not confirmed, attempt {attempt + 1}/{max_retries}")
+            time.sleep(1)
+
+        print("  [Gemini] WARNING: Failed to confirm message was sent after retries")
+        return False
 
     def is_chatgpt_generating(self):
         return self._evaluate(self.chatgpt_ws, '''
@@ -170,6 +244,18 @@ class ChromeController:
         return self._evaluate(self.gemini_ws, '''
             document.querySelector('button[aria-label*="Stop"]') !== null
         ''') or False
+
+    def get_chatgpt_response_count(self):
+        """Get current number of assistant responses."""
+        return self._evaluate(self.chatgpt_ws, '''
+            document.querySelectorAll('[data-message-author-role="assistant"]').length
+        ''') or 0
+
+    def get_gemini_response_count(self):
+        """Get current number of model responses."""
+        return self._evaluate(self.gemini_ws, '''
+            document.querySelectorAll("message-content").length
+        ''') or 0
 
     def get_chatgpt_response(self):
         self._activate_tab(self.chatgpt_ws)
@@ -219,74 +305,130 @@ class ChromeController:
         ''')
 
 
-def build_prompt(target, opponent_response=None, custom=None, current_round=None, total_rounds=None):
-    """Build prompt with config."""
+def build_prompt(target, opponent_response=None, topic=None, current_round=None, total_rounds=None):
+    """Build prompt using the new template system.
+
+    Templates can use these placeholders:
+    - {{topic}} - the debate topic
+    - {{opponent_response}} - the other AI's response
+    - {{round}} - current round number
+    - {{total_rounds}} - total number of rounds
+    """
     config = debate_state["config"]
-    parts = []
 
-    # Round info
+    # For round 1: ChatGPT uses initial, Gemini uses initial
+    # For round 2+: Both use subsequent
+    if current_round == 1:
+        if target == "chatgpt":
+            template = config.get("initial_prompt_chatgpt", "")
+        else:
+            template = config.get("initial_prompt_gemini", "")
+    else:
+        if target == "chatgpt":
+            template = config.get("subsequent_prompt_chatgpt", "")
+        else:
+            template = config.get("subsequent_prompt_gemini", "")
+
+    # Determine what opponent_response to use
+    effective_opponent_response = opponent_response or ""
+
+    # For Gemini's first prompt, check if we should include ChatGPT's response
+    if current_round == 1 and target == "gemini":
+        include_response = config.get("include_chatgpt_response_in_first", True)
+        if not include_response:
+            effective_opponent_response = ""
+
+    # Replace placeholders
+    prompt = template
+    prompt = prompt.replace("{{topic}}", topic or "")
+    prompt = prompt.replace("{{opponent_response}}", effective_opponent_response)
+    prompt = prompt.replace("{{round}}", str(current_round or ""))
+    prompt = prompt.replace("{{total_rounds}}", str(total_rounds or ""))
+
+    # Add round info at the top if we have it
     if current_round and total_rounds:
-        parts.append(f"[Round {current_round} of {total_rounds}]")
+        prompt = f"[Round {current_round} of {total_rounds}]\n\n{prompt}"
 
-    # System prompt (use Gemini-specific if available for Gemini)
-    if target == "gemini" and config["system_prompt_gemini"]:
-        parts.append(config["system_prompt_gemini"])
-    elif config["system_prompt"]:
-        parts.append(config["system_prompt"])
+    # Append formatting instructions
+    formatting_key = f"formatting_{target}"
+    formatting = config.get(formatting_key, "")
+    if formatting:
+        prompt = f"{prompt}\n\n{formatting}"
 
-    # Opponent header (optional)
-    if config["include_opponent_header"]:
-        opponent = "Gemini" if target == "chatgpt" else "ChatGPT"
-        parts.append(f"You are in a debate with {opponent}.")
-
-    # Role/position
-    role = config["role_chatgpt"] if target == "chatgpt" else config["role_gemini"]
-    if role:
-        parts.append(f"YOUR POSITION: {role}")
-
-    # Opponent's response
-    if opponent_response:
-        opponent_name = "Gemini" if target == "chatgpt" else "ChatGPT"
-        parts.append(f"{opponent_name} says:\n---\n{opponent_response}\n---")
-
-    # Custom instruction or default
-    if custom:
-        parts.append(custom)
-    elif config["instructions"]:
-        parts.append(config["instructions"])
-
-    # Goal
-    if config["goal"]:
-        parts.append(f"Goal: {config['goal']}")
-
-    return "\n\n".join(parts)
+    return prompt
 
 
-def wait_for_response(chrome, target, timeout=120):
-    time.sleep(2)
+def wait_for_response(chrome, target, timeout=3600, initial_count=None):
+    """Wait for AI to finish generating and return response.
+
+    Args:
+        chrome: ChromeController instance
+        target: "chatgpt" or "gemini"
+        timeout: Max seconds to wait
+        initial_count: Response count before sending (for verification)
+    """
     is_gen = chrome.is_chatgpt_generating if target == "chatgpt" else chrome.is_gemini_generating
     get_resp = chrome.get_chatgpt_response if target == "chatgpt" else chrome.get_gemini_response
+    get_count = chrome.get_chatgpt_response_count if target == "chatgpt" else chrome.get_gemini_response_count
 
-    for _ in range(timeout // 2):
+    # Get initial count if not provided
+    if initial_count is None:
+        initial_count = get_count()
+
+    elapsed = 0
+    generation_started = False
+
+    # First, wait for generation to start (with shorter timeout)
+    start_timeout = 15
+    while elapsed < start_timeout:
+        if debate_state["paused"]:
+            break
+        if is_gen():
+            generation_started = True
+            break
+        # Also check if response count increased (fast response)
+        if get_count() > initial_count:
+            generation_started = True
+            break
+        time.sleep(0.5)
+        elapsed += 0.5
+
+    if not generation_started:
+        print(f"  [{target}] WARNING: Generation did not start within {start_timeout}s")
+
+    # Now wait for generation to complete
+    while elapsed < timeout:
         if debate_state["paused"]:
             break
         if not is_gen():
+            # Double-check by waiting a moment and checking again
             time.sleep(1)
-            break
+            if not is_gen():
+                break
         time.sleep(2)
+        elapsed += 2
 
+        # Progress indicator
+        if int(elapsed) % 10 == 0 and elapsed > 10:
+            print(f"  [{target}] Still generating... ({int(elapsed)}s)")
+
+    # Small buffer for final render
+    time.sleep(0.5)
     return get_resp()
 
 
-def run_debate_round(chrome, initial_prompt=None, last_response=None):
+def run_debate_round(chrome, topic=None, last_response=None):
     with state_lock:
         debate_state["round"] += 1
         current_round = debate_state["round"]
         total_rounds = debate_state["total_rounds"]
 
     # ChatGPT turn
-    prompt = initial_prompt or build_prompt("chatgpt", last_response, current_round=current_round, total_rounds=total_rounds)
-    chrome.send_to_chatgpt(prompt)
+    prompt = build_prompt("chatgpt", opponent_response=last_response, topic=topic, current_round=current_round, total_rounds=total_rounds)
+
+    # Get count before sending for verification
+    chatgpt_initial_count = chrome.get_chatgpt_response_count()
+    sent = chrome.send_to_chatgpt(prompt)
 
     with state_lock:
         add_to_history({
@@ -296,7 +438,10 @@ def run_debate_round(chrome, initial_prompt=None, last_response=None):
             "text": prompt
         })
 
-    chatgpt_response = wait_for_response(chrome, "chatgpt")
+    if not sent:
+        print(f"  [Round {current_round}] ChatGPT send failed, attempting to continue...")
+
+    chatgpt_response = wait_for_response(chrome, "chatgpt", initial_count=chatgpt_initial_count)
 
     with state_lock:
         add_to_history({
@@ -312,8 +457,11 @@ def run_debate_round(chrome, initial_prompt=None, last_response=None):
     time.sleep(debate_state["config"]["delay"])
 
     # Gemini turn
-    prompt = build_prompt("gemini", chatgpt_response, current_round=current_round, total_rounds=total_rounds)
-    chrome.send_to_gemini(prompt)
+    prompt = build_prompt("gemini", opponent_response=chatgpt_response, topic=topic, current_round=current_round, total_rounds=total_rounds)
+
+    # Get count before sending for verification
+    gemini_initial_count = chrome.get_gemini_response_count()
+    sent = chrome.send_to_gemini(prompt)
 
     with state_lock:
         add_to_history({
@@ -323,7 +471,10 @@ def run_debate_round(chrome, initial_prompt=None, last_response=None):
             "text": prompt
         })
 
-    gemini_response = wait_for_response(chrome, "gemini")
+    if not sent:
+        print(f"  [Round {current_round}] Gemini send failed, attempting to continue...")
+
+    gemini_response = wait_for_response(chrome, "gemini", initial_count=gemini_initial_count)
 
     with state_lock:
         add_to_history({
@@ -350,45 +501,17 @@ def debate_loop(topic, num_rounds):
         return
 
     try:
-        # Send initial context to both AIs if provided
-        initial_context = debate_state["config"].get("initial_context", "").strip()
-        if initial_context:
-            context_msg = f"Context for this discussion:\n\n{initial_context}\n\nPlease acknowledge you understand this context briefly."
+        # Store topic for use in prompts
+        debate_state["topic"] = topic
 
-            # Send to ChatGPT
-            chrome.send_to_chatgpt(context_msg)
-            with state_lock:
-                add_to_history({
-                    "round": 0,
-                    "from": "chatgpt",
-                    "type": "context",
-                    "text": context_msg
-                })
-            wait_for_response(chrome, "chatgpt", timeout=60)
-
-            time.sleep(1)
-
-            # Send to Gemini
-            chrome.send_to_gemini(context_msg)
-            with state_lock:
-                add_to_history({
-                    "round": 0,
-                    "from": "gemini",
-                    "type": "context",
-                    "text": context_msg
-                })
-            wait_for_response(chrome, "gemini", timeout=60)
-
-            time.sleep(debate_state["config"]["delay"])
-
-        initial = build_prompt("chatgpt", custom=f"Topic: {topic}\n\nMake your opening argument.", current_round=1, total_rounds=num_rounds)
-        last_response = run_debate_round(chrome, initial_prompt=initial)
+        # Run first round
+        last_response = run_debate_round(chrome, topic=topic, last_response=None)
 
         for _ in range(num_rounds - 1):
             if debate_state["paused"] or not debate_state["running"]:
                 break
             time.sleep(debate_state["config"]["delay"])
-            last_response = run_debate_round(chrome, last_response=last_response)
+            last_response = run_debate_round(chrome, topic=topic, last_response=last_response)
     except Exception as e:
         with state_lock:
             add_to_history({"from": "system", "type": "error", "text": str(e)})
@@ -517,10 +640,11 @@ def resume_debate():
 
         try:
             response = last_resp
+            topic = debate_state.get("topic", "")
             for _ in range(num_rounds):
                 if debate_state["paused"]:
                     break
-                response = run_debate_round(chrome, last_response=response)
+                response = run_debate_round(chrome, topic=topic, last_response=response)
                 time.sleep(debate_state["config"]["delay"])
         finally:
             chrome.close()
@@ -561,11 +685,17 @@ def send_message():
 
     try:
         if target == "chatgpt":
-            chrome.send_to_chatgpt(message)
-            response = wait_for_response(chrome, "chatgpt")
+            initial_count = chrome.get_chatgpt_response_count()
+            sent = chrome.send_to_chatgpt(message)
+            if not sent:
+                return jsonify({"error": "Failed to send message to ChatGPT"}), 500
+            response = wait_for_response(chrome, "chatgpt", initial_count=initial_count)
         else:
-            chrome.send_to_gemini(message)
-            response = wait_for_response(chrome, "gemini")
+            initial_count = chrome.get_gemini_response_count()
+            sent = chrome.send_to_gemini(message)
+            if not sent:
+                return jsonify({"error": "Failed to send message to Gemini"}), 500
+            response = wait_for_response(chrome, "gemini", initial_count=initial_count)
 
         with state_lock:
             add_to_history({
@@ -724,7 +854,8 @@ Keep your summary concise (3-4 paragraphs max)."""
 
     try:
         if target in ("chatgpt", "both"):
-            chrome.send_to_chatgpt(summary_prompt)
+            initial_count = chrome.get_chatgpt_response_count()
+            sent = chrome.send_to_chatgpt(summary_prompt)
             with state_lock:
                 add_to_history({
                     "round": debate_state["round"],
@@ -732,7 +863,10 @@ Keep your summary concise (3-4 paragraphs max)."""
                     "type": "summary_request",
                     "text": summary_prompt
                 })
-            response = wait_for_response(chrome, "chatgpt", timeout=90)
+            if sent:
+                response = wait_for_response(chrome, "chatgpt", timeout=90, initial_count=initial_count)
+            else:
+                response = "[Failed to send summary request]"
             with state_lock:
                 add_to_history({
                     "round": debate_state["round"],
@@ -746,7 +880,8 @@ Keep your summary concise (3-4 paragraphs max)."""
                 time.sleep(2)
 
         if target in ("gemini", "both"):
-            chrome.send_to_gemini(summary_prompt)
+            initial_count = chrome.get_gemini_response_count()
+            sent = chrome.send_to_gemini(summary_prompt)
             with state_lock:
                 add_to_history({
                     "round": debate_state["round"],
@@ -754,7 +889,10 @@ Keep your summary concise (3-4 paragraphs max)."""
                     "type": "summary_request",
                     "text": summary_prompt
                 })
-            response = wait_for_response(chrome, "gemini", timeout=90)
+            if sent:
+                response = wait_for_response(chrome, "gemini", timeout=90, initial_count=initial_count)
+            else:
+                response = "[Failed to send summary request]"
             with state_lock:
                 add_to_history({
                     "round": debate_state["round"],

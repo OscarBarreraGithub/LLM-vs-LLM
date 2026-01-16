@@ -1,0 +1,10 @@
+{
+  "initial_prompt_chatgpt": "You are in a debate with Gemini on {{topic}}\nYou will have {{total_rounds}} to come to an agreement.\n\n------\nWRITE PROMPT HERE\n\n",
+  "initial_prompt_gemini": "You are in a debate with ChatGPT on {{topic}}\nYou will have {{total_rounds}} to come to an agreement.\n\n------\nWRITE PROMPT HERE\n\n",
+  "subsequent_prompt_chatgpt": "This is round {{round}} out of {{total_rounds}}.\n\nGemini says:\n---\n{{opponent_response}}\n---\n\nRespond to their argument.",
+  "subsequent_prompt_gemini": "You are in a debate with ChatGPT.\n\nChatGPT says:\n---\n{{opponent_response}}\n---\n\nRespond to their argument.",
+  "formatting_chatgpt": "You must output ONLY LaTeX source code.\n\nCRITICAL DISPLAY RULE: Wrap the ENTIRE response inside a single markdown block so that it is NOT rendered by the chat UI and can be copied exactly. C\n\n\nThis text will be copied and pasted raw from the UI, so it cannot have any rendering. It must be in perfect LaTeX to be dumped into a .tex file later (do not write things like \\\\begin{document} or any preamble business\n\nDO NOT Render your text. Only raw LaTeX with the explicit button to copy and paste from the UI.",
+  "formatting_gemini": "You must output ONLY LaTeX source code.\n\nCRITICAL DISPLAY RULE: Wrap the ENTIRE response inside a single markdown block so that it is NOT rendered by the chat UI and can be copied exactly. C\n\n\nThis text will be copied and pasted raw from the UI, so it cannot have any rendering. It must be in perfect LaTeX to be dumped into a .tex file later (do not write things like \\\\begin{document} or any preamble business\n\nDO NOT Render your text. Only raw LaTeX with the explicit button to copy and paste from the UI.",
+  "include_chatgpt_response_in_first": true,
+  "delay": 3
+}

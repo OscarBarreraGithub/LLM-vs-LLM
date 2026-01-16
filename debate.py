@@ -110,32 +110,62 @@ class ChatGPT:
         self.tab = tab
         self.name = "ChatGPT"
 
-    async def send_message(self, text: str) -> bool:
-        """Type and send a message. Returns True if successful."""
-        # Focus input
-        await self.tab.evaluate('''
-            (() => {
-                const el = document.querySelector("#prompt-textarea") ||
-                          document.querySelector("textarea");
-                if (el) { el.focus(); el.value = ""; }
-            })()
-        ''')
-        await asyncio.sleep(0.2)
+    async def send_message(self, text: str, max_retries: int = 3) -> bool:
+        """Type and send a message with confirmation. Returns True if successful."""
+        initial_count = await self.get_response_count()
 
-        # Type message
-        await self.tab.type_text(text)
-        await asyncio.sleep(0.3)
+        for attempt in range(max_retries):
+            # Focus and clear input
+            await self.tab.evaluate('''
+                (() => {
+                    const el = document.querySelector("#prompt-textarea") ||
+                              document.querySelector("textarea");
+                    if (el) { el.focus(); el.value = ""; }
+                })()
+            ''')
+            await asyncio.sleep(0.3)
 
-        # Click send
-        clicked = await self.tab.evaluate('''
-            (() => {
-                const btn = document.querySelector('[data-testid="send-button"]') ||
-                           document.querySelector('button[aria-label*="Send"]');
-                if (btn && !btn.disabled) { btn.click(); return true; }
-                return false;
-            })()
-        ''')
-        return clicked
+            # Type message
+            await self.tab.type_text(text)
+            await asyncio.sleep(0.5)
+
+            # Click send
+            clicked = await self.tab.evaluate('''
+                (() => {
+                    const btn = document.querySelector('[data-testid="send-button"]') ||
+                               document.querySelector('button[aria-label*="Send"]');
+                    if (btn && !btn.disabled) { btn.click(); return true; }
+                    return false;
+                })()
+            ''')
+
+            if not clicked:
+                print(f"  [ChatGPT] Send button not clicked, attempt {attempt + 1}/{max_retries}")
+                await asyncio.sleep(1)
+                continue
+
+            # Wait for confirmation: generation starts or response count increases
+            confirmed = await self._wait_for_send_confirmation(initial_count, timeout=10)
+            if confirmed:
+                return True
+
+            print(f"  [ChatGPT] Message not confirmed, attempt {attempt + 1}/{max_retries}")
+            await asyncio.sleep(1)
+
+        print("  [ChatGPT] WARNING: Failed to confirm message was sent after retries")
+        return False
+
+    async def _wait_for_send_confirmation(self, initial_count: int, timeout: int = 10) -> bool:
+        """Wait for confirmation that message was sent."""
+        elapsed = 0
+        while elapsed < timeout:
+            if await self.is_generating():
+                return True
+            if await self.get_response_count() > initial_count:
+                return True
+            await asyncio.sleep(0.5)
+            elapsed += 0.5
+        return False
 
     async def is_generating(self) -> bool:
         """Check if ChatGPT is still generating a response."""
@@ -183,33 +213,63 @@ class Gemini:
         self.tab = tab
         self.name = "Gemini"
 
-    async def send_message(self, text: str) -> bool:
-        """Type and send a message."""
-        # Focus input
-        await self.tab.evaluate('''
-            (() => {
-                const el = document.querySelector(".ql-editor");
-                if (el) { el.click(); el.focus(); }
-            })()
-        ''')
-        await asyncio.sleep(0.2)
+    async def send_message(self, text: str, max_retries: int = 3) -> bool:
+        """Type and send a message with confirmation. Returns True if successful."""
+        initial_count = await self.get_response_count()
 
-        # Type message
-        await self.tab.type_text(text)
-        await asyncio.sleep(0.3)
+        for attempt in range(max_retries):
+            # Focus and clear input
+            await self.tab.evaluate('''
+                (() => {
+                    const el = document.querySelector(".ql-editor");
+                    if (el) { el.click(); el.focus(); el.innerHTML = ""; }
+                })()
+            ''')
+            await asyncio.sleep(0.3)
 
-        # Click send
-        clicked = await self.tab.evaluate('''
-            (() => {
-                const buttons = Array.from(document.querySelectorAll("button"));
-                for (const btn of buttons) {
-                    const label = (btn.getAttribute("aria-label") || "").toLowerCase();
-                    if (label.includes("send")) { btn.click(); return true; }
-                }
-                return false;
-            })()
-        ''')
-        return clicked
+            # Type message
+            await self.tab.type_text(text)
+            await asyncio.sleep(0.5)
+
+            # Click send
+            clicked = await self.tab.evaluate('''
+                (() => {
+                    const buttons = Array.from(document.querySelectorAll("button"));
+                    for (const btn of buttons) {
+                        const label = (btn.getAttribute("aria-label") || "").toLowerCase();
+                        if (label.includes("send")) { btn.click(); return true; }
+                    }
+                    return false;
+                })()
+            ''')
+
+            if not clicked:
+                print(f"  [Gemini] Send button not clicked, attempt {attempt + 1}/{max_retries}")
+                await asyncio.sleep(1)
+                continue
+
+            # Wait for confirmation: generation starts or response count increases
+            confirmed = await self._wait_for_send_confirmation(initial_count, timeout=10)
+            if confirmed:
+                return True
+
+            print(f"  [Gemini] Message not confirmed, attempt {attempt + 1}/{max_retries}")
+            await asyncio.sleep(1)
+
+        print("  [Gemini] WARNING: Failed to confirm message was sent after retries")
+        return False
+
+    async def _wait_for_send_confirmation(self, initial_count: int, timeout: int = 10) -> bool:
+        """Wait for confirmation that message was sent."""
+        elapsed = 0
+        while elapsed < timeout:
+            if await self.is_generating():
+                return True
+            if await self.get_response_count() > initial_count:
+                return True
+            await asyncio.sleep(0.5)
+            elapsed += 0.5
+        return False
 
     async def is_generating(self) -> bool:
         """Check if Gemini is still generating."""
@@ -339,26 +399,49 @@ class DebateController:
 
         return "\n\n".join(parts)
 
-    async def wait_for_response(self, ai, timeout: int = 120) -> str:
+    async def wait_for_response(self, ai, timeout: int = 3600, initial_count: int = None) -> str:
         """Wait for AI to finish generating and return response."""
-        await asyncio.sleep(2)  # Initial wait for generation to start
+        # Get initial count if not provided
+        if initial_count is None:
+            initial_count = await ai.get_response_count()
 
-        start_count = await ai.get_response_count()
         elapsed = 0
+        generation_started = False
 
+        # First, wait for generation to start (with shorter timeout)
+        start_timeout = 15
+        while elapsed < start_timeout:
+            if await ai.is_generating():
+                generation_started = True
+                break
+            # Also check if response count increased (fast response)
+            if await ai.get_response_count() > initial_count:
+                generation_started = True
+                break
+            await asyncio.sleep(0.5)
+            elapsed += 0.5
+
+        if not generation_started:
+            print(f"  WARNING: {ai.name} generation did not start within {start_timeout}s")
+
+        # Now wait for generation to complete
         while elapsed < timeout:
+            # Check if still generating
+            if not await ai.is_generating():
+                # Double-check by waiting a moment
+                await asyncio.sleep(1)
+                if not await ai.is_generating():
+                    break
+
             await asyncio.sleep(2)
             elapsed += 2
 
-            # Check if still generating
-            if not await ai.is_generating():
-                await asyncio.sleep(1)  # Small buffer for final render
-                break
-
             # Progress indicator
-            if elapsed % 10 == 0:
-                print(f"  {ai.name} generating... ({elapsed}s)")
+            if int(elapsed) % 10 == 0 and elapsed > 10:
+                print(f"  {ai.name} generating... ({int(elapsed)}s)")
 
+        # Small buffer for final render
+        await asyncio.sleep(0.5)
         response = await ai.get_last_response()
 
         # Warn if response is too long
