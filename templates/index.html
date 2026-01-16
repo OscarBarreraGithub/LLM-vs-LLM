@@ -464,20 +464,6 @@
                         <button class="btn btn-secondary" onclick="clearHistory()">Clear Display</button>
                     </div>
 
-                    <div style="border-top: 1px solid #333; margin: 12px 0;"></div>
-
-                    <!-- Summary -->
-                    <div class="input-group">
-                        <label>Request Summary</label>
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <select id="summary-target" style="flex: 1;">
-                                <option value="both">Both AIs</option>
-                                <option value="chatgpt">ChatGPT only</option>
-                                <option value="gemini">Gemini only</option>
-                            </select>
-                            <button class="btn btn-secondary" onclick="requestSummary()">Get Summary</button>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -792,25 +778,6 @@
             await fetch('/api/clear-history', { method: 'POST' });
             fetchState();
             showToast('Display cleared');
-        }
-
-        async function requestSummary() {
-            const target = document.getElementById('summary-target').value;
-            showToast(`Requesting summary from ${target === 'both' ? 'both AIs' : target}...`);
-
-            const res = await fetch('/api/summary', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ target })
-            });
-
-            const data = await res.json();
-            if (data.error) {
-                showToast(data.error, 'error');
-            } else {
-                showToast('Summary received');
-                fetchState();
-            }
         }
 
         function toggleAdvanced() {

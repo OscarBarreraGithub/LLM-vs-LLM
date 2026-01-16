@@ -53,6 +53,14 @@ debate_state = {
 
 state_lock = threading.Lock()
 
+SUMMARY_PROMPT = """Please provide a brief summary of our discussion so far. Include:
+
+1. **Key Findings**: What main points or conclusions emerged?
+2. **Areas of Agreement**: Where did we find common ground?
+3. **Areas of Disagreement**: What points remain contested or unresolved?
+
+Keep your summary concise (3-4 paragraphs max)."""
+
 
 def add_to_history(entry):
     """Add an entry to history with automatic timestamp."""
@@ -336,6 +344,67 @@ def run_debate_round(chrome, initial_prompt=None, last_response=None):
     return gemini_response
 
 
+def request_summary_from_targets(chrome, target):
+    """Request a summary from ChatGPT, Gemini, or both."""
+    if target not in ("chatgpt", "gemini", "both"):
+        raise ValueError("Invalid target")
+
+    results = {}
+
+    if target in ("chatgpt", "both"):
+        chrome.send_to_chatgpt(SUMMARY_PROMPT)
+        with state_lock:
+            add_to_history({
+                "round": debate_state["round"],
+                "from": "chatgpt",
+                "type": "summary_request",
+                "text": SUMMARY_PROMPT
+            })
+        response = wait_for_response(chrome, "chatgpt", timeout=90)
+        with state_lock:
+            add_to_history({
+                "round": debate_state["round"],
+                "from": "chatgpt",
+                "type": "summary",
+                "text": response
+            })
+        results["chatgpt"] = response
+
+        if target == "both":
+            time.sleep(2)
+
+    if target in ("gemini", "both"):
+        chrome.send_to_gemini(SUMMARY_PROMPT)
+        with state_lock:
+            add_to_history({
+                "round": debate_state["round"],
+                "from": "gemini",
+                "type": "summary_request",
+                "text": SUMMARY_PROMPT
+            })
+        response = wait_for_response(chrome, "gemini", timeout=90)
+        with state_lock:
+            add_to_history({
+                "round": debate_state["round"],
+                "from": "gemini",
+                "type": "summary",
+                "text": response
+            })
+        results["gemini"] = response
+
+    return results
+
+
+def should_auto_summarize():
+    with state_lock:
+        return (
+            debate_state["total_rounds"] > 0
+            and debate_state["round"] >= debate_state["total_rounds"]
+            and debate_state["running"]
+            and not debate_state["paused"]
+        )
+
+
 def debate_loop(topic, num_rounds):
     with state_lock:
         debate_state["total_rounds"] = num_rounds
@@ -389,6 +458,9 @@ def debate_loop(topic, num_rounds):
                 break
             time.sleep(debate_state["config"]["delay"])
             last_response = run_debate_round(chrome, last_response=last_response)
+
+        if should_auto_summarize():
+            request_summary_from_targets(chrome, "both")
     except Exception as e:
         with state_lock:
             add_to_history({"from": "system", "type": "error", "text": str(e)})
@@ -522,6 +594,9 @@ def resume_debate():
                     break
                 response = run_debate_round(chrome, last_response=response)
                 time.sleep(debate_state["config"]["delay"])
+
+            if should_auto_summarize():
+                request_summary_from_targets(chrome, "both")
         finally:
             chrome.close()
             with state_lock:
@@ -712,58 +787,8 @@ def request_summary():
     if not success:
         return jsonify({"error": msg})
 
-    summary_prompt = """Please provide a brief summary of our discussion so far. Include:
-
-1. **Key Findings**: What main points or conclusions emerged?
-2. **Areas of Agreement**: Where did we find common ground?
-3. **Areas of Disagreement**: What points remain contested or unresolved?
-
-Keep your summary concise (3-4 paragraphs max)."""
-
-    results = {}
-
     try:
-        if target in ("chatgpt", "both"):
-            chrome.send_to_chatgpt(summary_prompt)
-            with state_lock:
-                add_to_history({
-                    "round": debate_state["round"],
-                    "from": "chatgpt",
-                    "type": "summary_request",
-                    "text": summary_prompt
-                })
-            response = wait_for_response(chrome, "chatgpt", timeout=90)
-            with state_lock:
-                add_to_history({
-                    "round": debate_state["round"],
-                    "from": "chatgpt",
-                    "type": "summary",
-                    "text": response
-                })
-            results["chatgpt"] = response
-
-            if target == "both":
-                time.sleep(2)
-
-        if target in ("gemini", "both"):
-            chrome.send_to_gemini(summary_prompt)
-            with state_lock:
-                add_to_history({
-                    "round": debate_state["round"],
-                    "from": "gemini",
-                    "type": "summary_request",
-                    "text": summary_prompt
-                })
-            response = wait_for_response(chrome, "gemini", timeout=90)
-            with state_lock:
-                add_to_history({
-                    "round": debate_state["round"],
-                    "from": "gemini",
-                    "type": "summary",
-                    "text": response
-                })
-            results["gemini"] = response
-
+        results = request_summary_from_targets(chrome, target)
         return jsonify({"success": True, "summaries": results})
     finally:
         chrome.close()
