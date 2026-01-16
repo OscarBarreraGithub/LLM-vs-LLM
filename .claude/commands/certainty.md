@@ -1,11 +1,11 @@
 ---
-description: Evaluate certainty of recent changes and flag areas needing review
-allowed-tools: Read, Grep, Glob, Bash(git:*)
+description: Evaluate certainty of recent changes, flag areas needing review, and log to history
+allowed-tools: Read, Grep, Glob, Bash(git:*), Edit
 ---
 
 # Certainty Assessment
 
-Review the recent changes in this session and provide a certainty assessment.
+Review the recent changes in this session, provide a certainty assessment, and log it.
 
 ## Instructions
 
@@ -50,3 +50,11 @@ Review the recent changes in this session and provide a certainty assessment.
 ```
 
 5. **If any certainty < 5**: Offer to create a GitHub issue with `/issue`
+
+6. **Log the assessment** to `.claude/certainty-log.jsonl`:
+
+```json
+{"timestamp": "ISO-8601", "session": "brief-description", "score": X, "summary": "one-line summary of changes", "uncertainties": ["list", "if any"]}
+```
+
+Append one line per assessment. Keep summary under 100 chars.
