@@ -1,0 +1,145 @@
+name: Claude Code Agent
+
+on:
+  # Manual trigger with task input
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task for Claude to complete'
+        required: true
+        type: string
+      branch:
+        description: 'Branch to create for changes (leave empty for auto-generated)'
+        required: false
+        type: string
+
+  # Trigger on issues with 'claude' label
+  issues:
+    types: [labeled]
+
+jobs:
+  run-claude:
+    # Only run if manually triggered OR if issue has 'claude' label
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && github.event.label.name == 'claude')
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Determine task
+        id: task
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "task=${{ github.event.inputs.task }}" >> $GITHUB_OUTPUT
+            echo "source=manual" >> $GITHUB_OUTPUT
+          else
+            # Get task from issue body
+            TASK=$(cat << 'EOF'
+          ${{ github.event.issue.body }}
+          EOF
+          )
+            echo "task<<EOF" >> $GITHUB_OUTPUT
+            echo "$TASK" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "source=issue" >> $GITHUB_OUTPUT
+            echo "issue_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate branch name
+        id: branch
+        run: |
+          if [ -n "${{ github.event.inputs.branch }}" ]; then
+            BRANCH="${{ github.event.inputs.branch }}"
+          else
+            BRANCH="claude/task-$(date +%Y%m%d-%H%M%S)"
+          fi
+          echo "name=$BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Create and checkout branch
+        run: |
+          git checkout -b ${{ steps.branch.outputs.name }}
+
+      - name: Run Claude Code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude --print "${{ steps.task.outputs.task }}" --output-format text
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push changes
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "Claude Code"
+          git config user.email "claude@anthropic.com"
+          git add -A
+          git commit -m "Claude: ${{ steps.task.outputs.task }}" -m "Automated changes by Claude Code" -m "Co-Authored-By: Claude <noreply@anthropic.com>"
+          git push -u origin ${{ steps.branch.outputs.name }}
+
+      - name: Create Pull Request
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_BODY="## Task
+          ${{ steps.task.outputs.task }}
+
+          ## Changes
+          Automated changes made by Claude Code.
+
+          ---
+          *This PR was created automatically by the Claude Code GitHub Action.*"
+
+          if [ "${{ steps.task.outputs.source }}" == "issue" ]; then
+            PR_BODY="$PR_BODY
+
+          Closes #${{ steps.task.outputs.issue_number }}"
+          fi
+
+          gh pr create \
+            --title "Claude: ${{ steps.task.outputs.task }}" \
+            --body "$PR_BODY" \
+            --head ${{ steps.branch.outputs.name }} \
+            --base main
+
+      - name: Comment on issue (if triggered by issue)
+        if: steps.task.outputs.source == 'issue' && steps.changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ steps.task.outputs.issue_number }} \
+            --body "✅ Claude has completed this task and created a PR. Please review the changes."
+
+      - name: Comment if no changes needed
+        if: steps.changes.outputs.has_changes == 'false' && steps.task.outputs.source == 'issue'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ steps.task.outputs.issue_number }} \
+            --body "ℹ️ Claude analyzed this task but no code changes were needed."
