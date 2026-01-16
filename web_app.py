@@ -396,11 +396,15 @@ def request_summary_from_targets(chrome, target):
 
 
 def request_summary_safely(chrome, target):
+    with state_lock:
+        summary_round = debate_state["round"]
+
     try:
         return request_summary_from_targets(chrome, target)
     except Exception as exc:
         with state_lock:
             add_to_history({
+                "round": summary_round,
                 "from": "system",
                 "type": "error",
                 "text": f"Summary request failed: {exc}"
@@ -413,7 +417,6 @@ def should_auto_summarize():
         return (
             debate_state["total_rounds"] > 0
             and debate_state["round"] >= debate_state["total_rounds"]
-            and debate_state["running"]
             and not debate_state["paused"]
         )
 
@@ -424,6 +427,7 @@ def debate_loop(topic, num_rounds):
 
     chrome = ChromeController()
     success, msg = chrome.connect()
+    summary_needed = False
 
     if not success:
         with state_lock:
@@ -471,13 +475,13 @@ def debate_loop(topic, num_rounds):
                 break
             time.sleep(debate_state["config"]["delay"])
             last_response = run_debate_round(chrome, last_response=last_response)
-
-        if should_auto_summarize():
-            request_summary_safely(chrome, "both")
+        summary_needed = should_auto_summarize()
     except Exception as e:
         with state_lock:
             add_to_history({"from": "system", "type": "error", "text": str(e)})
     finally:
+        if summary_needed:
+            request_summary_safely(chrome, "both")
         chrome.close()
         with state_lock:
             debate_state["running"] = False
@@ -607,10 +611,9 @@ def resume_debate():
                     break
                 response = run_debate_round(chrome, last_response=response)
                 time.sleep(debate_state["config"]["delay"])
-
+        finally:
             if should_auto_summarize():
                 request_summary_safely(chrome, "both")
-        finally:
             chrome.close()
             with state_lock:
                 debate_state["running"] = False
