@@ -427,7 +427,7 @@ def debate_loop(topic, num_rounds):
 
     chrome = ChromeController()
     success, msg = chrome.connect()
-    summary_needed = False
+    debate_failed = False
 
     if not success:
         with state_lock:
@@ -475,12 +475,12 @@ def debate_loop(topic, num_rounds):
                 break
             time.sleep(debate_state["config"]["delay"])
             last_response = run_debate_round(chrome, last_response=last_response)
-        summary_needed = should_auto_summarize()
     except Exception as e:
+        debate_failed = True
         with state_lock:
             add_to_history({"from": "system", "type": "error", "text": str(e)})
     finally:
-        if summary_needed:
+        if not debate_failed and should_auto_summarize():
             request_summary_safely(chrome, "both")
         chrome.close()
         with state_lock:
@@ -604,6 +604,7 @@ def resume_debate():
                 debate_state["running"] = False
             return
 
+        debate_failed = False
         try:
             response = last_resp
             for _ in range(num_rounds):
@@ -611,8 +612,12 @@ def resume_debate():
                     break
                 response = run_debate_round(chrome, last_response=response)
                 time.sleep(debate_state["config"]["delay"])
+        except Exception as exc:
+            debate_failed = True
+            with state_lock:
+                add_to_history({"from": "system", "type": "error", "text": str(exc)})
         finally:
-            if should_auto_summarize():
+            if not debate_failed and should_auto_summarize():
                 request_summary_safely(chrome, "both")
             chrome.close()
             with state_lock:
