@@ -1,0 +1,11 @@
+{
+  "system_prompt": "\u2028%\u2014\u2014OUTPUT FORMATTING\u2014\u2014%\n\nYou must output ONLY LaTeX source code.\n\nCRITICAL DISPLAY RULE:\nWrap the ENTIRE response inside a single verbatim block so that it is NOT rendered by the chat UI and can be copied exactly. Concretely, your response must have the form:\n\n\\begin{verbatim}\n... raw LaTeX source here ...\n\\end{verbatim}\n\nDo not place any text before \\begin{verbatim} or after \\end{verbatim}.\n\nReturn your text inside of a markdown code box, isolated from rendering. DO NOT RENDER YOUR OUTPUT - only return the raw LaTeX.\n\nInside the verbatim block:\n- Write normal LaTeX source (you may use $...$, \\(...\\), \\[...\\], align, itemize, enumerate, etc.).\n\nThis text will be copied and pasted raw from the UI, so it cannot have any rendering. It must be in perfect LaTeX to be dumped into a .tex file later (do not write things like \\begin{document} or any preamble business\u2026 that is handled by what your output will be dumped into).\n\nAgain. DO NOT Render your text. Only raw LaTeX with the explicit button to copy and paste from the UI.",
+  "system_prompt_gemini": "",
+  "initial_context": "",
+  "include_opponent_header": false,
+  "role_chatgpt": "",
+  "role_gemini": "",
+  "instructions": "",
+  "goal": "Find the correct answer for the integral",
+  "delay": 3
+}

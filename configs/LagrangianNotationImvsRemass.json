@@ -1,0 +1,9 @@
+{
+  "system_prompt": "",
+  "include_opponent_header": true,
+  "role_chatgpt": "",
+  "role_gemini": "",
+  "instructions": "Respond in 2-3 concise paragraphs. Use LaTeX notation for any mathematical expressions (e.g., $x^2$ for inline, $$\\int f(x)dx$$ for display).",
+  "goal": "",
+  "delay": 3
+}

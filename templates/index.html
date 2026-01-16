@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Debate Arena</title>
+    <!-- KaTeX for LaTeX rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 1px solid #333;
+            margin-bottom: 20px;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            background: linear-gradient(135deg, #10a37f, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+
+        .conversation-panel {
+            background: #1a1a1a;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .conversation-header {
+            background: #252525;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .status-badge.idle { background: #333; color: #888; }
+        .status-badge.running { background: #10a37f33; color: #10a37f; }
+        .status-badge.paused { background: #f5a62333; color: #f5a623; }
+
+        .conversation-body {
+            height: 600px;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.8rem;
+        }
+
+        .message-avatar.chatgpt { background: #10a37f; color: white; }
+        .message-avatar.gemini { background: #8b5cf6; color: white; }
+        .message-avatar.system { background: #666; color: white; }
+
+        .message-name { font-weight: 600; }
+        .message-round { color: #666; font-size: 0.85rem; }
+        .message-time { color: #555; font-size: 0.8rem; margin-left: auto; }
+
+        .message-content {
+            background: #252525;
+            padding: 15px;
+            border-radius: 8px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            font-size: 0.95rem;
+        }
+
+        .message.chatgpt .message-content { border-left: 3px solid #10a37f; }
+        .message.gemini .message-content { border-left: 3px solid #8b5cf6; }
+
+        /* KaTeX styling */
+        .message-content .katex { font-size: 1.1em; }
+        .message-content .katex-display { margin: 1em 0; overflow-x: auto; }
+
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .panel-card {
+            background: #1a1a1a;
+            border-radius: 12px;
+            padding: 15px;
+        }
+
+        .panel-card h3 {
+            font-size: 0.9rem;
+            color: #888;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .input-group { margin-bottom: 12px; }
+
+        .input-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        input[type="text"], textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 6px;
+            background: #252525;
+            color: #e0e0e0;
+            font-size: 0.9rem;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #10a37f;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+            font-family: inherit;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #10a37f;
+        }
+
+        .checkbox-group label {
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            width: 100%;
+            margin-bottom: 8px;
+        }
+
+        .btn:hover { transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .btn-primary { background: #10a37f; color: white; }
+        .btn-primary:hover { background: #0d8a6a; }
+        .btn-secondary { background: #333; color: #e0e0e0; }
+        .btn-secondary:hover { background: #444; }
+        .btn-warning { background: #f5a623; color: #000; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-purple { background: #8b5cf6; color: white; }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-group .btn {
+            flex: 1;
+            margin-bottom: 0;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .stat {
+            background: #252525;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #10a37f;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .config-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .config-row select { flex: 1; }
+        .config-row .btn { width: auto; margin: 0; }
+
+        .collapsible {
+            border-top: 1px solid #333;
+            padding-top: 12px;
+            margin-top: 12px;
+        }
+
+        .collapsible-toggle {
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 0.85rem;
+            padding: 5px 0;
+            width: 100%;
+            text-align: left;
+        }
+
+        .collapsible-toggle:hover { color: #e0e0e0; }
+
+        .collapsible-content {
+            display: none;
+            margin-top: 12px;
+        }
+
+        .collapsible-content.show { display: block; }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #333;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            display: none;
+            z-index: 1000;
+        }
+
+        .toast.success { background: #10a37f; }
+        .toast.error { background: #ef4444; }
+        .toast.show { display: block; animation: fadeIn 0.3s; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AI Debate Arena</h1>
+        </header>
+
+        <div class="main-grid">
+            <!-- Conversation Panel -->
+            <div class="conversation-panel">
+                <div class="conversation-header">
+                    <span>Conversation</span>
+                    <div>
+                        <button class="btn btn-small btn-secondary" onclick="exportLatex()">Export .tex</button>
+                        <span id="status-badge" class="status-badge idle">Idle</span>
+                    </div>
+                </div>
+                <div id="conversation" class="conversation-body">
+                    <div style="text-align: center; color: #666; padding: 40px;">
+                        Start a debate to see the conversation here
+                    </div>
+                </div>
+            </div>
+
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <!-- Start Debate -->
+                <div class="panel-card">
+                    <h3>Start Debate</h3>
+                    <div class="input-group">
+                        <label>Topic</label>
+                        <input type="text" id="topic" placeholder="e.g., Tabs vs Spaces">
+                    </div>
+                    <div class="input-group">
+                        <label>Rounds</label>
+                        <input type="text" id="rounds" value="3" style="width: 60px;">
+                    </div>
+                    <button class="btn btn-primary" onclick="startDebate()">Start Debate</button>
+                    <div class="btn-group">
+                        <button class="btn btn-warning" onclick="pauseDebate()">Pause</button>
+                        <button class="btn btn-secondary" onclick="resumeDebate()">Resume</button>
+                    </div>
+                    <button class="btn btn-danger" onclick="stopDebate()">Stop</button>
+                </div>
+
+                <!-- Send Message -->
+                <div class="panel-card">
+                    <h3>Send Message</h3>
+                    <div class="input-group">
+                        <textarea id="custom-message" placeholder="Custom message..."></textarea>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="sendTo('chatgpt')">ChatGPT</button>
+                        <button class="btn btn-purple" onclick="sendTo('gemini')">Gemini</button>
+                    </div>
+                </div>
+
+                <!-- Configuration -->
+                <div class="panel-card">
+                    <h3>Configuration</h3>
+
+                    <!-- Save/Load -->
+                    <div class="config-row">
+                        <select id="config-select">
+                            <option value="">-- Select Config --</option>
+                        </select>
+                        <button class="btn btn-small btn-secondary" onclick="loadConfig()">Load</button>
+                    </div>
+                    <div class="config-row">
+                        <input type="text" id="config-name" placeholder="Config name">
+                        <button class="btn btn-small btn-primary" onclick="saveConfig()">Save</button>
+                    </div>
+
+                    <div style="border-top: 1px solid #333; margin: 12px 0;"></div>
+
+                    <!-- System Prompt -->
+                    <div class="input-group">
+                        <label>System Prompt (ChatGPT)</label>
+                        <textarea id="system-prompt" rows="3" placeholder="e.g., You are an expert physicist..."></textarea>
+                    </div>
+
+                    <!-- Gemini System Prompt -->
+                    <div class="input-group">
+                        <label>System Prompt (Gemini) <span style="color: #666; font-size: 0.85em;">- leave empty to use ChatGPT's</span></label>
+                        <textarea id="system-prompt-gemini" rows="3" placeholder="Gemini-specific instructions (e.g., stricter formatting rules)..."></textarea>
+                    </div>
+
+                    <!-- Initial Context -->
+                    <div class="input-group">
+                        <label>Initial Context (sent once to both AIs at start)</label>
+                        <textarea id="initial-context" rows="3" placeholder="e.g., Background information, data, or context both AIs should know..."></textarea>
+                    </div>
+
+                    <!-- Include opponent header toggle -->
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="include-header" checked>
+                        <label for="include-header">Include "You are debating X" header</label>
+                    </div>
+
+                    <!-- Roles -->
+                    <div class="input-group">
+                        <label>ChatGPT Role</label>
+                        <input type="text" id="role-chatgpt" placeholder="e.g., Argue for position X">
+                    </div>
+                    <div class="input-group">
+                        <label>Gemini Role</label>
+                        <input type="text" id="role-gemini" placeholder="e.g., Argue for position Y">
+                    </div>
+
+                    <!-- Collapsible advanced -->
+                    <div class="collapsible">
+                        <button class="collapsible-toggle" onclick="toggleAdvanced()">Advanced options...</button>
+                        <div id="advanced-content" class="collapsible-content">
+                            <div class="input-group">
+                                <label>Instructions (appended to prompts)</label>
+                                <textarea id="instructions" rows="2">Respond in 2-3 concise paragraphs. Use LaTeX notation for any mathematical expressions (e.g., $x^2$ for inline, $$\int f(x)dx$$ for display).</textarea>
+                            </div>
+                            <div class="input-group">
+                                <label>Goal</label>
+                                <input type="text" id="goal" placeholder="e.g., Find common ground">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-secondary" onclick="applyConfig()" style="margin-top: 12px;">Apply Config</button>
+                </div>
+
+                <!-- Session -->
+                <div class="panel-card">
+                    <h3>Session</h3>
+                    <div class="stats">
+                        <div class="stat">
+                            <div id="round-count" class="stat-value">0</div>
+                            <div class="stat-label">Rounds</div>
+                        </div>
+                        <div class="stat">
+                            <div id="char-count" class="stat-value">0</div>
+                            <div class="stat-label">Characters</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 12px;">
+                        <button class="btn btn-secondary" onclick="newChat()">New Chat (Reset)</button>
+                        <button class="btn btn-secondary" onclick="clearHistory()">Clear Display</button>
+                    </div>
+
+                    <div style="border-top: 1px solid #333; margin: 12px 0;"></div>
+
+                    <!-- Summary -->
+                    <div class="input-group">
+                        <label>Request Summary</label>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <select id="summary-target" style="flex: 1;">
+                                <option value="both">Both AIs</option>
+                                <option value="chatgpt">ChatGPT only</option>
+                                <option value="gemini">Gemini only</option>
+                            </select>
+                            <button class="btn btn-secondary" onclick="requestSummary()">Get Summary</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let pollInterval = null;
+        let lastHistoryLength = 0;
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        function startPolling() {
+            if (pollInterval) return;
+            pollInterval = setInterval(fetchState, 1000);
+        }
+
+        function stopPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
+
+        async function fetchState() {
+            try {
+                const res = await fetch('/api/state');
+                const state = await res.json();
+                updateUI(state);
+            } catch (e) {
+                console.error('Failed to fetch state:', e);
+            }
+        }
+
+        function updateUI(state) {
+            // Status badge
+            const badge = document.getElementById('status-badge');
+            if (state.running && !state.paused) {
+                badge.className = 'status-badge running';
+                badge.textContent = 'Running';
+            } else if (state.paused) {
+                badge.className = 'status-badge paused';
+                badge.textContent = 'Paused';
+            } else {
+                badge.className = 'status-badge idle';
+                badge.textContent = 'Idle';
+            }
+
+            // Stats
+            document.getElementById('round-count').textContent = state.round;
+            const totalChars = state.history
+                .filter(m => m.type === 'response')
+                .reduce((sum, m) => sum + (m.text?.length || 0), 0);
+            document.getElementById('char-count').textContent =
+                totalChars > 1000 ? (totalChars / 1000).toFixed(1) + 'k' : totalChars;
+
+            // Update conversation
+            if (state.history.length !== lastHistoryLength) {
+                lastHistoryLength = state.history.length;
+                renderConversation(state.history);
+            }
+
+            // Only update config fields on first load (not during polling)
+            // This prevents overwriting user input
+        }
+
+        function renderConversation(history) {
+            const container = document.getElementById('conversation');
+
+            if (history.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; color: #666; padding: 40px;">
+                        Start a debate to see the conversation here
+                    </div>
+                `;
+                return;
+            }
+
+            const messages = history.filter(m => m.type === 'response' || m.type === 'error' || m.type === 'summary');
+
+            container.innerHTML = messages.map(m => `
+                <div class="message ${m.from}${m.type === 'summary' ? ' summary' : ''}">
+                    <div class="message-header">
+                        <div class="message-avatar ${m.from}">${m.from === 'chatgpt' ? 'GPT' : m.from === 'gemini' ? 'GEM' : 'SYS'}</div>
+                        <span class="message-name">${m.from === 'chatgpt' ? 'ChatGPT' : m.from === 'gemini' ? 'Gemini' : 'System'}</span>
+                        ${m.type === 'summary' ? '<span class="message-round" style="background: #9333ea;">Summary</span>' : (m.round ? `<span class="message-round">Round ${m.round}</span>` : '')}
+                        ${m.timestamp ? `<span class="message-time">${formatTime(m.timestamp)}</span>` : ''}
+                    </div>
+                    <div class="message-content">${escapeHtml(m.text || '')}</div>
+                </div>
+            `).join('');
+
+            // Render LaTeX
+            renderMathInElement(container, {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false},
+                    {left: '\\[', right: '\\]', display: true},
+                    {left: '\\(', right: '\\)', display: false}
+                ],
+                throwOnError: false
+            });
+
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatTime(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        async function startDebate() {
+            const topic = document.getElementById('topic').value.trim();
+            const rounds = parseInt(document.getElementById('rounds').value) || 3;
+
+            if (!topic) {
+                showToast('Please enter a topic', 'error');
+                return;
+            }
+
+            await applyConfig();
+
+            const res = await fetch('/api/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ topic, rounds })
+            });
+
+            const data = await res.json();
+            if (data.error) {
+                showToast(data.error, 'error');
+            } else {
+                startPolling();
+            }
+        }
+
+        async function pauseDebate() {
+            await fetch('/api/pause', { method: 'POST' });
+            showToast('Paused');
+        }
+
+        async function resumeDebate() {
+            const rounds = parseInt(document.getElementById('rounds').value) || 1;
+            await fetch('/api/resume', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ rounds })
+            });
+            startPolling();
+            showToast('Resumed');
+        }
+
+        async function stopDebate() {
+            await fetch('/api/stop', { method: 'POST' });
+            showToast('Stopped');
+        }
+
+        async function sendTo(target) {
+            const message = document.getElementById('custom-message').value.trim();
+            if (!message) {
+                showToast('Please enter a message', 'error');
+                return;
+            }
+
+            showToast(`Sending to ${target}...`);
+
+            const res = await fetch('/api/send', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ target, message })
+            });
+
+            const data = await res.json();
+            if (data.error) {
+                showToast(data.error, 'error');
+            } else {
+                document.getElementById('custom-message').value = '';
+                fetchState();
+            }
+        }
+
+        async function applyConfig() {
+            const config = {
+                system_prompt: document.getElementById('system-prompt').value,
+                system_prompt_gemini: document.getElementById('system-prompt-gemini').value,
+                initial_context: document.getElementById('initial-context').value,
+                include_opponent_header: document.getElementById('include-header').checked,
+                role_chatgpt: document.getElementById('role-chatgpt').value,
+                role_gemini: document.getElementById('role-gemini').value,
+                instructions: document.getElementById('instructions').value,
+                goal: document.getElementById('goal').value
+            };
+
+            await fetch('/api/config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(config)
+            });
+        }
+
+        async function saveConfig() {
+            const name = document.getElementById('config-name').value.trim();
+            if (!name) {
+                showToast('Enter a config name', 'error');
+                return;
+            }
+
+            await applyConfig();
+
+            const res = await fetch('/api/config/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                showToast(`Saved as "${name}"`);
+                loadConfigList();
+            } else {
+                showToast(data.error || 'Save failed', 'error');
+            }
+        }
+
+        async function loadConfig() {
+            const name = document.getElementById('config-select').value;
+            if (!name) {
+                showToast('Select a config', 'error');
+                return;
+            }
+
+            const res = await fetch('/api/config/load', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                // Populate UI fields from loaded config
+                const cfg = data.config;
+                document.getElementById('system-prompt').value = cfg.system_prompt || '';
+                document.getElementById('system-prompt-gemini').value = cfg.system_prompt_gemini || '';
+                document.getElementById('initial-context').value = cfg.initial_context || '';
+                document.getElementById('include-header').checked = cfg.include_opponent_header !== false;
+                document.getElementById('role-chatgpt').value = cfg.role_chatgpt || '';
+                document.getElementById('role-gemini').value = cfg.role_gemini || '';
+                document.getElementById('instructions').value = cfg.instructions || '';
+                document.getElementById('goal').value = cfg.goal || '';
+                showToast(`Loaded "${name}"`);
+                fetchState();
+            } else {
+                showToast(data.error || 'Load failed', 'error');
+            }
+        }
+
+        async function loadConfigList() {
+            const res = await fetch('/api/config/list');
+            const data = await res.json();
+
+            const select = document.getElementById('config-select');
+            select.innerHTML = '<option value="">-- Select Config --</option>';
+            for (const name of data.configs || []) {
+                select.innerHTML += `<option value="${name}">${name}</option>`;
+            }
+        }
+
+        async function exportLatex() {
+            const topic = document.getElementById('topic').value.trim() || 'AI_Debate';
+
+            const res = await fetch('/api/export/latex', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ topic })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                showToast(`Exported: ${data.filename}`);
+            } else {
+                showToast(data.error || 'Export failed', 'error');
+            }
+        }
+
+        async function newChat() {
+            if (!confirm('Reset both conversations?')) return;
+
+            const res = await fetch('/api/new', { method: 'POST' });
+            const data = await res.json();
+            if (data.error) {
+                showToast(data.error, 'error');
+            } else {
+                showToast('Conversations reset');
+                fetchState();
+            }
+        }
+
+        async function clearHistory() {
+            await fetch('/api/clear-history', { method: 'POST' });
+            fetchState();
+            showToast('Display cleared');
+        }
+
+        async function requestSummary() {
+            const target = document.getElementById('summary-target').value;
+            showToast(`Requesting summary from ${target === 'both' ? 'both AIs' : target}...`);
+
+            const res = await fetch('/api/summary', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ target })
+            });
+
+            const data = await res.json();
+            if (data.error) {
+                showToast(data.error, 'error');
+            } else {
+                showToast('Summary received');
+                fetchState();
+            }
+        }
+
+        function toggleAdvanced() {
+            document.getElementById('advanced-content').classList.toggle('show');
+        }
+
+        // Load config fields once on page load
+        async function initializeConfig() {
+            const res = await fetch('/api/state');
+            const state = await res.json();
+            if (state.config) {
+                document.getElementById('system-prompt').value = state.config.system_prompt || '';
+                document.getElementById('include-header').checked = state.config.include_opponent_header !== false;
+                document.getElementById('role-chatgpt').value = state.config.role_chatgpt || '';
+                document.getElementById('role-gemini').value = state.config.role_gemini || '';
+                document.getElementById('instructions').value = state.config.instructions || '';
+                document.getElementById('goal').value = state.config.goal || '';
+            }
+        }
+
+        // Initialize
+        initializeConfig();
+        fetchState();
+        startPolling();
+        loadConfigList();
+
+        document.getElementById('topic').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startDebate();
+        });
+    </script>
+</body>
+</html>
