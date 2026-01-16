@@ -347,7 +347,7 @@ def run_debate_round(chrome, initial_prompt=None, last_response=None):
 def request_summary_from_targets(chrome, target):
     """Request a summary from ChatGPT, Gemini, or both."""
     if target not in ("chatgpt", "gemini", "both"):
-        raise ValueError("Invalid target")
+        raise ValueError("Invalid target. Use 'chatgpt', 'gemini', or 'both'.")
 
     results = {}
 
@@ -393,6 +393,19 @@ def request_summary_from_targets(chrome, target):
         results["gemini"] = response
 
     return results
+
+
+def request_summary_safely(chrome, target):
+    try:
+        return request_summary_from_targets(chrome, target)
+    except Exception as exc:
+        with state_lock:
+            add_to_history({
+                "from": "system",
+                "type": "error",
+                "text": f"Summary request failed: {exc}"
+            })
+        return {}
 
 
 def should_auto_summarize():
@@ -460,7 +473,7 @@ def debate_loop(topic, num_rounds):
             last_response = run_debate_round(chrome, last_response=last_response)
 
         if should_auto_summarize():
-            request_summary_from_targets(chrome, "both")
+            request_summary_safely(chrome, "both")
     except Exception as e:
         with state_lock:
             add_to_history({"from": "system", "type": "error", "text": str(e)})
@@ -596,7 +609,7 @@ def resume_debate():
                 time.sleep(debate_state["config"]["delay"])
 
             if should_auto_summarize():
-                request_summary_from_targets(chrome, "both")
+                request_summary_safely(chrome, "both")
         finally:
             chrome.close()
             with state_lock:
