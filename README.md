@@ -14,10 +14,13 @@ CLAUDE.md                    # Project context - Claude reads this first
 .claude/
 ├── settings.json            # Permissions and environment
 ├── agents/                  # Custom subagents
+│   ├── advocate.md          # Proposes solutions (for code debates)
+│   ├── skeptic.md           # Critiques proposals (for code debates)
 │   ├── code-reviewer.md     # Reviews code with certainty scores
 │   ├── uncertainty-handler.md   # Creates GitHub issues when stuck
 │   └── debate-expert.md     # Browser automation specialist
 ├── commands/                # Slash commands
+│   ├── code-debate.md       # /code-debate - Multi-agent design debates
 │   ├── certainty.md         # /certainty - Assess confidence
 │   ├── issue.md             # /issue - Create GitHub issue
 │   └── debate.md            # /debate - Tool management
@@ -44,16 +47,43 @@ The key innovation: **Claude self-assesses confidence after making changes**.
 
 This prevents Claude from making changes it's unsure about. Instead, it creates a GitHub issue explaining what's uncertain and asks for input.
 
+### Code Debate Workflow
+
+**Before implementing, debate the approach.** Two agents argue different solutions:
+
+```
+/code-debate "How should we add caching to the API?"
+
+┌─────────────────┐     ┌─────────────────┐
+│   Advocate      │◄───►│   Skeptic       │
+│   (proposes)    │     │   (critiques)   │
+└────────┬────────┘     └────────┬────────┘
+         └───────────┬───────────┘
+                     ▼
+              Synthesis + Recommendation
+```
+
+**Round 1**: Advocate proposes an approach with benefits
+**Round 2**: Skeptic critiques, raises edge cases, proposes alternative
+**Round 3**: Advocate defends or adapts
+**Round 4**: Skeptic responds, concedes or presses
+**Final**: Synthesized recommendation with confidence score
+
+This catches design issues before any code is written.
+
 ### Custom Commands
 
 | Command | Purpose |
 |---------|---------|
+| `/code-debate [problem]` | Two agents debate approaches before implementation |
 | `/certainty` | Review recent changes and assess confidence levels |
 | `/issue [description]` | Create a GitHub issue for uncertain areas |
 | `/debate start\|stop\|status` | Manage the debate tool |
 
 ### Custom Agents
 
+- **advocate** - Proposes and defends solutions optimistically
+- **skeptic** - Critiques proposals, finds edge cases, proposes alternatives
 - **code-reviewer** - Reviews changes with risk assessment and certainty scores
 - **uncertainty-handler** - Formats and creates GitHub issues when Claude is stuck
 - **debate-expert** - Deep knowledge of Chrome DevTools Protocol and browser automation
